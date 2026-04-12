@@ -15,7 +15,7 @@ from anfis.membership import GaussMf, BellMf, SigmoidMf
 import pickle
 
 # --- Configuration ---
-LABELED_DATA_FILE = 'final_labeled_dataset.csv'
+LABELED_DATA_FILE = 'labeled_dataset.csv'
 MODEL_OUTPUT_FILE = 'anfis_model.pkl'
 EPOCHS = 100 # Number of training cycles
 
@@ -28,35 +28,78 @@ def prepare_data(filename):
     input_columns = ['satellites', 'hdop', 'vibration_x']
     output_column = 'target_trust_score'
 
-    # Convert data to PyTorch tensors
-    X = torch.from_numpy(df[input_columns].values).float()
-    Y = torch.from_numpy(df[output_column].values).float()
+    # Convert columns to numeric, handling any non-numeric values
+    for col in input_columns + [output_column]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Drop rows with NaN values (from conversion errors or missing data)
+    df = df.dropna(subset=input_columns + [output_column])
+
+    if len(df) == 0:
+        raise ValueError("No valid numeric data found in the CSV file!")
+
+    print(f"Loaded {len(df)} valid data samples")
+
+    # Data diagnostics for each feature + target
+    stats = df[input_columns + [output_column]].agg(['min', 'max', 'mean', 'var'])
+    print("\n--- Data Diagnostics ---")
+    for col in stats.columns:
+        col_stats = stats[col]
+        print(
+            f"{col:15s} | min: {col_stats['min']:.4f} | max: {col_stats['max']:.4f} "
+            f"| mean: {col_stats['mean']:.4f} | var: {col_stats['var']:.6f}"
+        )
+    print("------------------------\n")
+
+    # Extract numeric data and convert to numpy arrays
+    X_data = df[input_columns].values.astype(np.float32)
+    Y_data = df[output_column].values.astype(np.float32)
+
+    # Convert to PyTorch tensors, keeping targets as column vectors
+    X = torch.from_numpy(X_data).float()
+    Y = torch.from_numpy(Y_data).float().unsqueeze(1)
 
     return X, Y
 
+def _build_gauss_params(column_tensor, num_mfs=3, min_sigma=1e-3):
+    """Utility to create MF centers/sigmas based on data stats."""
+    col_min = float(torch.min(column_tensor))
+    col_max = float(torch.max(column_tensor))
+    if col_min == col_max:
+        # Avoid zero range by creating small spread around the single value
+        col_min -= 1.0
+        col_max += 1.0
+    centers = np.linspace(col_min, col_max, num=num_mfs)
+    spread = max((col_max - col_min) / (num_mfs * 2), min_sigma)
+    sigmas = np.full_like(centers, spread)
+    return centers, sigmas
+
 def train_anfis_model(X_train, Y_train):
     """Defines, trains, and returns an ANFIS model."""
-    # Define the ANFIS model structure
-    # This defines 3 inputs, each with 3 Gaussian membership functions
-    membership_functions = [
-        ('satellites', GaussMf(np.array([-2., 8., 18.]), np.array([4., 4., 4.]))),
-        ('hdop', GaussMf(np.array([-2., 5.5, 13.]), np.array([3., 3., 3.]))),
-        ('vibration', GaussMf(np.array([-10., 25., 60.]), np.array([10., 10., 10.])))
-    ]
-    model = anfis.AnfisNet(membership_functions)
+    feature_names = ['satellites', 'hdop', 'vibration_x']
 
-    # Define the optimizer
+    # Build data-aware membership functions (invardefs)
+    invardefs = []
+    for idx, name in enumerate(feature_names):
+        centers, sigmas = _build_gauss_params(X_train[:, idx])
+        invardefs.append((name, GaussMf(np.array(centers), np.array(sigmas))))
+
+    outvarnames = ['trust_score']  # single output
+    model = anfis.AnfisNet(
+        description='Drone Trust ANFIS',
+        invardefs=invardefs,
+        outvarnames=outvarnames,
+        hybrid=True
+    )
+
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
     print("--- Starting ANFIS Training ---")
     for epoch in range(EPOCHS):
-        # Make a prediction
         Y_pred = model(X_train)
+        loss = torch.nn.functional.mse_loss(Y_pred, Y_train)
 
-        # Calculate loss (Mean Squared Error)
-        loss = torch.nn.functional.mse_loss(Y_pred.squeeze(), Y_train)
-
-        # Backpropagation
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -66,7 +109,6 @@ def train_anfis_model(X_train, Y_train):
 
     print("--- Training Complete ---")
     return model
-
 if __name__ == "__main__":
     # 1. Prepare the data
     X, Y = prepare_data(LABELED_DATA_FILE)

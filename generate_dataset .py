@@ -26,9 +26,12 @@ def run_logic_and_log(writer, scenario_name, data):
     trust_score = 0.1 # Default to low trust
     try:
         jump = 0
+        alt_discrepancy = data.get("baro_gps_discrepancy", 0.0)
         gps_simulator.input['satellites'] = data["satellites"]
         gps_simulator.input['hdop'] = data["hdop"]
+        gps_simulator.input['consistency'] = jump
         gps_simulator.input['vibration'] = data["vibration_x"]
+        gps_simulator.input['baro_gps_discrepancy'] = alt_discrepancy
         gps_simulator.compute()
         trust_score = gps_simulator.output['gps_trust_score']
     except Exception as e:
@@ -76,6 +79,7 @@ def simulate_spoofing_drift(writer, duration_steps):
             "satellites": 15, # GPS signal looks perfect
             "hdop": 1.1,
             "vibration_x": random.uniform(4, 6),
+            "baro_gps_discrepancy": discrepancy_increase[i] + random.uniform(-1, 1)
         }
         run_logic_and_log(writer, "Spoofing Attack", data)
 
