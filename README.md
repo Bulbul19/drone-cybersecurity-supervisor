@@ -1,4 +1,4 @@
-# 🚁 GPS Spoofing-Resistant Drone Navigation System
+# GPS Spoofing-Resistant Drone Navigation System
 
 ![Python](https://img.shields.io/badge/Python-3.9+-blue)
 ![Platform](https://img.shields.io/badge/Platform-Raspberry%20Pi%204B-red)
@@ -79,6 +79,16 @@ Raspberry Pi 4B
 - **Fuzzy logic fusion** — handles sensor uncertainty and noise gracefully
 - **Live supervisor decisions** — flags spoofed signals in real time
 - **CSV logging** — all sensor readings and trust scores logged for analysis
+
+---
+
+## 📹 Demo
+
+Live demonstration of the system detecting GPS spoofing on Raspberry Pi 4B:
+
+[![GPS Spoofing Detection Demo](https://img.youtube.com/vi/B0zH2406mbA/0.jpg)](https://youtube.com/shorts/B0zH2406mbA)
+
+> Real-time trust score dropping as GPS spoofing is introduced — system flags the attack within seconds.
 
 ---
 
